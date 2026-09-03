@@ -1,197 +1,242 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Search, MapPin, Briefcase, ExternalLink, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/profiles/search/';
+import { AlertCircle, LoaderCircle } from 'lucide-react';
+
+import { fetchProfileFilters, searchProfiles } from './api/profiles';
+import Filters from './components/Filters';
+import ProfileCard from './components/ProfileCard';
+import SearchBar from './components/SearchBar';
 
 export default function App() {
   const [profiles, setProfiles] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('');
 
-  // Dropdown Options from Backend
   const [roles, setRoles] = useState([]);
   const [countries, setCountries] = useState([]);
 
-  // Fetch profiles from backend API
-  const fetchProfiles = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get(API_BASE_URL, {
-        params: {
-          q: searchQuery,
-          role: selectedRole,
-          country: selectedCountry,
-        },
-      });
-
-      setProfiles(response.data.results || []);
-      setTotalCount(response.data.count || 0);
-
-      if (response.data.filters) {
-        setRoles(response.data.filters.roles || []);
-        setCountries(response.data.filters.countries || []);
-      }
-    } catch (error) {
-      console.error('Error fetching profiles:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [loading, setLoading] = useState(false);
+  const [filtersLoading, setFiltersLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchProfiles();
+    const controller = new AbortController();
+
+    const loadFilters = async () => {
+      try {
+        setFiltersLoading(true);
+
+        const data = await fetchProfileFilters({
+          signal: controller.signal,
+        });
+
+        setRoles(data.roles || []);
+        setCountries(data.countries || []);
+      } catch (requestError) {
+        if (requestError.name !== 'CanceledError') {
+          console.error('Failed to load filters:', requestError);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setFiltersLoading(false);
+        }
+      }
+    };
+
+    loadFilters();
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const data = await searchProfiles({
+          query: searchQuery,
+          role: selectedRole,
+          country: selectedCountry,
+          page: 1,
+          signal: controller.signal,
+        });
+
+        setProfiles(data.results || []);
+        setTotalCount(data.count || 0);
+      } catch (requestError) {
+        if (
+          requestError.name === 'CanceledError' ||
+          requestError.code === 'ERR_CANCELED'
+        ) {
+          return;
+        }
+
+        console.error('Failed to search profiles:', requestError);
+
+        if (requestError.response?.status === 503) {
+          setError(
+            'Search service is temporarily unavailable. Please try again in a moment.',
+          );
+        } else {
+          setError(
+            'Something went wrong while loading profiles. Please try again.',
+          );
+        }
+
+        setProfiles([]);
+        setTotalCount(0);
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
     }, 300);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [searchQuery, selectedRole, selectedCountry]);
 
+  const resetFilters = () => {
+    setSelectedRole('');
+    setSelectedCountry('');
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+  };
+
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <header className="mb-8 text-center md:text-left">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">LinkedIn Profiles Search</h1>
-        <p className="text-gray-600">Search and filter candidate profiles live from backend API.</p>
-      </header>
+    <div className="min-h-screen bg-gray-50">
+      <main className="mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-10">
+        <header className="mb-8">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-blue-600">
+            Candidate Search
+          </p>
 
-      {/* Search & Filters */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 space-y-4 md:space-y-0 md:flex md:gap-4 md:items-center">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search name, job title, summary, skills..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-800"
-          />
-        </div>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+            LinkedIn Profile Search
+          </h1>
 
-        {/* Role Filter */}
-        <div className="w-full md:w-60">
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            className="w-full py-2.5 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 bg-white"
-          >
-            <option value="">All Job Roles</option>
-            {roles.map((role, idx) => (
-              <option key={idx} value={role}>{role}</option>
-            ))}
-          </select>
-        </div>
+          <p className="mt-2 max-w-2xl text-gray-600">
+            Search candidate profiles by name, role, skills, summary, and
+            location.
+          </p>
+        </header>
 
-        {/* Country Filter */}
-        <div className="w-full md:w-52">
-          <select
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-            className="w-full py-2.5 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 bg-white"
-          >
-            <option value="">All Countries</option>
-            {countries.map((country, idx) => (
-              <option key={idx} value={country}>{country}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+        <section
+          aria-label="Profile search"
+          className="mb-8 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:p-6"
+        >
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={clearSearch}
+            />
 
-      {/* Result Counter */}
-      <div className="mb-6">
-        <p className="text-sm font-medium text-gray-600">
-          Found <span className="text-blue-600 font-bold">{totalCount}</span> candidates
-        </p>
-      </div>
+            <Filters
+              roles={roles}
+              countries={countries}
+              selectedRole={selectedRole}
+              selectedCountry={selectedCountry}
+              onRoleChange={setSelectedRole}
+              onCountryChange={setSelectedCountry}
+              onReset={resetFilters}
+            />
+          </div>
 
-      {/* Grid Display */}
-      {loading ? (
-        <div className="text-center py-16 text-gray-500 font-medium">Loading candidate profiles...</div>
-      ) : profiles.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-gray-200 text-gray-500">
-          No profiles found matching your filters.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col justify-between hover:shadow-md transition-shadow"
-            >
+          {filtersLoading && (
+            <p className="mt-3 text-xs text-gray-400">
+              Loading filter options...
+            </p>
+          )}
+        </section>
+
+        <section aria-live="polite">
+          <div className="mb-5 flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-600">
+              Found{' '}
+              <span className="font-bold text-blue-600">
+                {totalCount}
+              </span>{' '}
+              candidates
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <AlertCircle
+                size={20}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+
               <div>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">
-                      <User className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 text-lg leading-tight">
-                        {profile.full_name || 'N/A'}
-                      </h3>
-                      {profile.job_title_role && (
-                        <span className="inline-block mt-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-                          {profile.job_title_role}
-                        </span>
-                      )}
+                <p className="font-semibold">Unable to load profiles</p>
+                <p className="mt-1">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-72 animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+                >
+                  <div className="mb-5 flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-full bg-gray-200" />
+
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-2/3 rounded bg-gray-200" />
+                      <div className="h-3 w-1/3 rounded bg-gray-200" />
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-2 text-sm text-gray-600 mb-4">
-                  {profile.job_title && (
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span className="line-clamp-1">{profile.job_title}</span>
-                    </div>
-                  )}
-
-                  {(profile.location_city || profile.location_country) && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span>
-                        {[profile.location_city, profile.location_country].filter(Boolean).join(', ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {profile.summary && (
-                  <p className="text-xs text-gray-500 line-clamp-3 mb-4 bg-gray-50 p-2.5 rounded border border-gray-100">
-                    {profile.summary}
-                  </p>
-                )}
-
-                {profile.skills && (
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {profile.skills.split(',').slice(0, 5).map((skill, i) => (
-                      <span key={i} className="text-[11px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
-                        {skill.trim()}
-                      </span>
-                    ))}
+                  <div className="space-y-3">
+                    <div className="h-3 w-full rounded bg-gray-200" />
+                    <div className="h-3 w-4/5 rounded bg-gray-200" />
+                    <div className="h-20 w-full rounded bg-gray-200" />
                   </div>
-                )}
+                </div>
+              ))}
+            </div>
+          ) : profiles.length === 0 ? (
+            <div className="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+                <LoaderCircle size={22} />
               </div>
 
-              {profile.linkedin_url && (
-                <a
-                  href={profile.linkedin_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center justify-center gap-2 w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium text-xs rounded-lg border border-gray-200 transition-colors"
-                >
-                  View LinkedIn Profile <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
+              <h2 className="text-lg font-semibold text-gray-900">
+                No profiles found
+              </h2>
+
+              <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
+                Try changing your search query or removing one of the
+                filters.
+              </p>
             </div>
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {profiles.map((profile) => (
+                <ProfileCard
+                  key={profile.id}
+                  profile={profile}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
