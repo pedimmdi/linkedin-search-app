@@ -21,28 +21,25 @@ class ProfileSearchServiceTests(TestCase):
         client = Mock()
         client.indices.exists.return_value = True
         client.search.return_value = {
-            "hits": {
-                "total": {"value": total},
-                "hits": hits or [],
-            }
+            "hits": {"total": {"value": total}, "hits": hits or []}
         }
         return client
 
     def test_search_builds_fuzzy_ranked_query(self):
-        client = self._client(
-            [{
+        client = self._client([
+            {
                 "_source": {"django_id": self.profile.pk},
                 "highlight": {"full_name": ["<em>John</em> Doe"]},
-            }]
-        )
+            }
+        ])
 
         profiles, total, highlights = ProfileSearchService(client).search(
-            query="Jon", role="engineering", country="United States", page=2, page_size=20
+            query="Jon", role="engineering", country="United States",
+            page=2, page_size=20,
         )
 
         body = client.search.call_args.kwargs["body"]
         query = body["query"]["bool"]["must"][0]["multi_match"]
-
         self.assertEqual(profiles, [self.profile])
         self.assertEqual(total, 1)
         self.assertIn("full_name^4", query["fields"])
@@ -58,9 +55,9 @@ class ProfileSearchServiceTests(TestCase):
         )
 
     def test_empty_query_uses_match_all(self):
-        client = self._client(
-            [{"_source": {"django_id": self.profile.pk}], total=1
-        )
+        client = self._client([
+            {"_source": {"django_id": self.profile.pk}}
+        ])
         ProfileSearchService(client).search()
         body = client.search.call_args.kwargs["body"]
         self.assertEqual(body["query"]["bool"]["must"], [{"match_all": {}}])
