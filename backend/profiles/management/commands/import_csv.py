@@ -1,58 +1,227 @@
 import csv
 import json
-from django.core.management.base import BaseCommand
+
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+
 from profiles.models import Profile
 
 
 class Command(BaseCommand):
-    help = 'Import LinkedIn profiles from text/CSV/JSON file'
+    help = "Import LinkedIn profiles from CSV or JSON file"
 
     def add_arguments(self, parser):
-        parser.add_argument('csv_file', type=str, help='Path to the dataset file')
+        parser.add_argument(
+            "input_file",
+            type=str,
+            help="Path to the dataset file",
+        )
+        parser.add_argument(
+            "--clear",
+            action="store_true",
+            help="Delete existing profiles before importing",
+        )
 
     def handle(self, *args, **options):
-        file_path = options['csv_file']
-        self.stdout.write(self.style.SUCCESS(f'Reading data from {file_path}...'))
-
-        profiles_to_create = []
+        file_path = options["input_file"]
+        clear_existing = options["clear"]
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content.startswith('[') or content.startswith('{'):
-                    data = json.loads(content)
-                    if isinstance(data, dict):
-                        data = [data]
-                    for item in data:
-                        profiles_to_create.append(Profile(
-                            full_name=item.get('full_name') or item.get('name') or item.get('fullName'),
-                            job_title=item.get('job_title') or item.get('title') or item.get('jobTitle'),
-                            job_title_role=item.get('job_title_role') or item.get('role'),
-                            skills=str(item.get('skills', '')),
-                            location_country=item.get('location_country') or item.get('country'),
-                            location_city=item.get('location_city') or item.get('city'),
-                            summary=item.get('summary') or item.get('about'),
-                            linkedin_url=item.get('linkedin_url') or item.get('url') or item.get('link')
-                        ))
-                    Profile.objects.bulk_create(profiles_to_create)
-                    self.stdout.write(self.style.SUCCESS(f'Successfully imported {len(profiles_to_create)} profiles from JSON.'))
-                    return
-        except Exception:
-            pass
+            rows = self._load_rows(file_path)
+        except (OSError, UnicodeDecodeError) as exc:
+            raise CommandError(
+                f"Unable to read file: {exc}"
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise CommandError(
+                f"Invalid JSON file: {exc}"
+            ) from exc
 
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                profiles_to_create.append(Profile(
-                    full_name=row.get('full_name') or row.get('name') or row.get('fullName'),
-                    job_title=row.get('job_title') or row.get('title') or row.get('jobTitle'),
-                    job_title_role=row.get('job_title_role') or row.get('role'),
-                    skills=row.get('skills', ''),
-                    location_country=row.get('location_country') or row.get('country'),
-                    location_city=row.get('location_city') or row.get('city'),
-                    summary=row.get('summary') or row.get('about'),
-                    linkedin_url=row.get('linkedin_url') or row.get('url') or row.get('link')
-                ))
+        profiles = [
+            self._build_profile(row)
+            for row in rows
+        ]
 
-        Profile.objects.bulk_create(profiles_to_create)
-        self.stdout.write(self.style.SUCCESS(f'Successfully imported {len(profiles_to_create)} profiles.'))
+        profiles = self._deduplicate(profiles)
+
+        with transaction.atomic():
+            if clear_existing:
+                deleted_count, _ = Profile.objects.all().delete()
+
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Deleted {deleted_count} existing records."
+                    )
+                )
+
+            created_count = self._create_profiles(profiles)
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Import completed: {created_count} profiles created."
+            )
+        )
+
+    def _load_rows(self, file_path):
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8",
+            errors="ignore",
+        ) as file:
+            content = file.read().strip()
+
+        if not content:
+            raise CommandError("Input file is empty.")
+
+        if content.startswith("[") or content.startswith("{"):
+            data = json.loads(content)
+
+            if isinstance(data, dict):
+                data = [data]
+
+            if not isinstance(data, list):
+                raise CommandError(
+                    "JSON root must be an object or array."
+                )
+
+            return data
+
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8",
+            errors="ignore",
+            newline="",
+        ) as file:
+            return list(csv.DictReader(file))
+
+    def _build_profile(self, row):
+        return Profile(
+            full_name=self._value(
+                row,
+                "full_name",
+                "name",
+                "fullName",
+            ),
+            linkedin_id=self._value(
+                row,
+                "linkedin_id",
+            ),
+            job_title=self._value(
+                row,
+                "job_title",
+                "title",
+                "jobTitle",
+            ),
+            job_title_role=self._value(
+                row,
+                "job_title_role",
+                "role",
+            ),
+            skills=self._string_value(
+                row.get("skills", "")
+            ),
+            location_country=self._value(
+                row,
+                "location_country",
+                "country",
+            ),
+            location_city=self._value(
+                row,
+                "location_city",
+                "city",
+            ),
+            summary=self._value(
+                row,
+                "summary",
+                "about",
+            ),
+            linkedin_url=self._value(
+                row,
+                "linkedin_url",
+                "url",
+                "link",
+            ),
+        )
+
+    @staticmethod
+    def _value(row, *keys):
+        for key in keys:
+            value = row.get(key)
+
+            if value is not None:
+                value = str(value).strip()
+
+                if value:
+                    return value
+
+        return ""
+
+    @staticmethod
+    def _string_value(value):
+        if value is None:
+            return ""
+
+        if isinstance(value, (list, dict)):
+            return json.dumps(
+                value,
+                ensure_ascii=False,
+            )
+
+        return str(value).strip()
+
+    @staticmethod
+    def _deduplication_key(profile):
+        if profile.linkedin_url:
+            return (
+                "url",
+                profile.linkedin_url.strip().lower(),
+            )
+
+        if profile.linkedin_id:
+            return (
+                "id",
+                profile.linkedin_id.strip().lower(),
+                profile.full_name.strip().lower(),
+            )
+
+        return (
+            "fallback",
+            profile.full_name.strip().lower(),
+            profile.job_title.strip().lower(),
+            profile.location_country.strip().lower(),
+        )
+
+    def _deduplicate(self, profiles):
+        unique_profiles = {}
+        duplicate_count = 0
+
+        for profile in profiles:
+            key = self._deduplication_key(profile)
+
+            if key in unique_profiles:
+                duplicate_count += 1
+                continue
+
+            unique_profiles[key] = profile
+
+        if duplicate_count:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Skipped {duplicate_count} duplicate records."
+                )
+            )
+
+        return list(unique_profiles.values())
+
+    def _create_profiles(self, profiles):
+        if not profiles:
+            return 0
+
+        Profile.objects.bulk_create(
+            profiles,
+            batch_size=500,
+        )
+
+        return len(profiles)
