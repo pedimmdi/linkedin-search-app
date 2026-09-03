@@ -6,6 +6,7 @@ INDEX_NAME = settings.ELASTICSEARCH_INDEX
 
 PROFILE_MAPPING = {
     "properties": {
+        "django_id": {"type": "integer"},
         "full_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
         "linkedin_id": {"type": "keyword"},
         "job_title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
@@ -25,10 +26,8 @@ def get_client():
 
 def ensure_index(client=None):
     client = client or get_client()
-
     if client.indices.exists(index=INDEX_NAME):
         return False
-
     client.indices.create(
         index=INDEX_NAME,
         settings={"number_of_shards": 1, "number_of_replicas": 0},
