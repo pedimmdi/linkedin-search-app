@@ -9,6 +9,61 @@ class ProfileSearchService:
         self.client = client or get_client()
         self.index = settings.ELASTICSEARCH_INDEX
 
+    def count(self, query="", role="", country=""):
+        ensure_index(self.client)
+
+        must = []
+        filters = []
+
+        query = query.strip()
+        role = role.strip()
+        country = country.strip()
+
+        if query:
+            must.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": [
+                            "full_name^4",
+                            "job_title^3",
+                            "skills^2",
+                            "summary",
+                            "location_city",
+                        ],
+                        "fuzziness": "AUTO",
+                        "operator": "and",
+                    }
+                }
+            )
+        else:
+            must.append({"match_all": {}})
+
+        if role:
+            filters.append({"term": {"job_title_role": role}})
+
+        if country:
+            filters.append({"term": {"location_country": country}})
+
+        body = {
+            "size": 0,
+            "track_total_hits": True,
+            "query": {
+                "bool": {
+                    "must": must,
+                    "filter": filters,
+                }
+            },
+        }
+
+        response = self.client.search(
+            index=self.index,
+            body=body,
+        )
+
+        total = response["hits"]["total"]
+        return total["value"] if isinstance(total, dict) else total
+
     def search(self, query="", role="", country="", page=1, page_size=20):
         ensure_index(self.client)
 

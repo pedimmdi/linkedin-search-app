@@ -28,10 +28,41 @@ class ProfileSearchAPIView(ListAPIView):
             page = 1
 
         page_size = settings.REST_FRAMEWORK.get("PAGE_SIZE", 20)
+
+        # Elasticsearch has a finite result window. Return a client error
+        # instead of exposing an internal search-service failure when the
+        # requested page is outside the available result range.
         try:
-            profiles, total, highlights = ProfileSearchService().search(
-                query=query, role=role, country=country,
-                page=page, page_size=page_size,
+            total = ProfileSearchService().count(
+                query=query,
+                role=role,
+                country=country,
+            )
+        except Exception:
+            return Response(
+                {"detail": "Search service is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if total > 0 and (page - 1) * page_size >= total:
+            return Response(
+                {
+                    "detail": "Requested page is out of range.",
+                    "count": total,
+                    "next": None,
+                    "previous": page - 1 if page > 1 else None,
+                    "results": [],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            profiles, _, highlights = ProfileSearchService().search(
+                query=query,
+                role=role,
+                country=country,
+                page=page,
+                page_size=page_size,
             )
         except Exception:
             return Response(
