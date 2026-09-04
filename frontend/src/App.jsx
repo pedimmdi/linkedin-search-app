@@ -4,12 +4,14 @@ import { AlertCircle, LoaderCircle } from 'lucide-react';
 
 import { fetchProfileFilters, searchProfiles } from './api/profiles';
 import Filters from './components/Filters';
+import Pagination from './components/Pagination';
 import ProfileCard from './components/ProfileCard';
 import SearchBar from './components/SearchBar';
 
 export default function App() {
   const [profiles, setProfiles] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
@@ -63,7 +65,7 @@ export default function App() {
           query: searchQuery,
           role: selectedRole,
           country: selectedCountry,
-          page: 1,
+          page: currentPage,
           signal: controller.signal,
         });
 
@@ -102,17 +104,44 @@ export default function App() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [searchQuery, selectedRole, selectedCountry]);
+  }, [searchQuery, selectedRole, selectedCountry, currentPage]);
+
+  const handleRoleChange = (value) => {
+    setSelectedRole(value);
+    setCurrentPage(1);
+  };
+
+  const handleCountryChange = (value) => {
+    setSelectedCountry(value);
+    setCurrentPage(1);
+  };
 
   const resetFilters = () => {
     setSelectedRole('');
     setSelectedCountry('');
+    setCurrentPage(1);
   };
 
   const clearSearch = () => {
     setSearchQuery('');
+    setCurrentPage(1);
   };
 
+  const handleSearchQueryChange = (value) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(totalCount / 20);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
+  };
+  
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-10">
@@ -138,7 +167,7 @@ export default function App() {
           <div className="flex flex-col gap-3 lg:flex-row">
             <SearchBar
               value={searchQuery}
-              onChange={setSearchQuery}
+              onChange={handleSearchQueryChange}
               onClear={clearSearch}
             />
 
@@ -147,8 +176,8 @@ export default function App() {
               countries={countries}
               selectedRole={selectedRole}
               selectedCountry={selectedCountry}
-              onRoleChange={setSelectedRole}
-              onCountryChange={setSelectedCountry}
+              onRoleChange={handleRoleChange}
+              onCountryChange={handleCountryChange}
               onReset={resetFilters}
             />
           </div>
@@ -226,14 +255,22 @@ export default function App() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {profiles.map((profile) => (
-                <ProfileCard
-                  key={profile.id}
-                  profile={profile}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {profiles.map((profile) => (
+                  <ProfileCard
+                    key={profile.id}
+                    profile={profile}
+                  />
+                ))}
+              </div>
+
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+              />
+            </>
           )}
         </section>
       </main>
