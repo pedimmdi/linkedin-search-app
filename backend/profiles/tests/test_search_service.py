@@ -61,3 +61,47 @@ class ProfileSearchServiceTests(TestCase):
         ProfileSearchService(client).search()
         body = client.search.call_args.kwargs["body"]
         self.assertEqual(body["query"]["bool"]["must"], [{"match_all": {}}])
+
+    def test_count_returns_total_hits(self):
+        client = self._client(total=7)
+
+        total = ProfileSearchService(client).count(
+            query="engineer",
+            role="engineering",
+            country="United States",
+        )
+
+        self.assertEqual(total, 7)
+
+        body = client.search.call_args.kwargs["body"]
+
+        self.assertEqual(body["size"], 0)
+        self.assertTrue(body["track_total_hits"])
+
+        query = body["query"]["bool"]["must"][0]["multi_match"]
+
+        self.assertEqual(query["fuzziness"], "AUTO")
+        self.assertEqual(query["operator"], "and")
+
+        self.assertEqual(
+            body["query"]["bool"]["filter"],
+            [
+                {"term": {"job_title_role": "engineering"}},
+                {"term": {"location_country": "United States"}},
+            ],
+        )
+
+    def test_count_empty_query_uses_match_all(self):
+        client = self._client(total=12)
+
+        total = ProfileSearchService(client).count()
+
+        self.assertEqual(total, 12)
+
+        body = client.search.call_args.kwargs["body"]
+
+        self.assertEqual(
+            body["query"]["bool"]["must"],
+            [{"match_all": {}}],
+        )
+        self.assertEqual(body["size"], 0)
