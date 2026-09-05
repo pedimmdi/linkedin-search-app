@@ -1,165 +1,162 @@
-import {
-  Briefcase,
-  ExternalLink,
-  MapPin,
-  User,
-} from 'lucide-react';
+import { ExternalLink, MapPin, BriefcaseBusiness } from 'lucide-react';
 
-function getInitials(name) {
-  if (!name) {
-    return 'NA';
-  }
-
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
-}
-
-function renderHighlightedText(text, highlights) {
+function renderHighlightedText(text) {
   if (!text) {
     return null;
   }
 
-  if (!highlights?.length) {
-    return text;
-  }
+  const parts = text.split(/(<mark>.*?<\/mark>)/gi);
 
-  return highlights.map((item, index) => {
-    const parts = item.split(/(<mark>.*?<\/mark>)/gi);
+  return parts.map((part, index) => {
+    const match = part.match(/^<mark>(.*?)<\/mark>$/i);
 
-    return (
-      <span key={`${item}-${index}`}>
-        {index > 0 && ' ... '}
+    if (match) {
+      return (
+        <mark
+          key={index}
+          className="rounded bg-yellow-100 px-0.5 text-inherit"
+        >
+          {match[1]}
+        </mark>
+      );
+    }
 
-        {parts.map((part, partIndex) => {
-          const match = part.match(/^<mark>(.*?)<\/mark>$/i);
-
-          if (match) {
-            return (
-              <mark
-                key={`${part}-${partIndex}`}
-                className="rounded bg-yellow-100 px-0.5 text-gray-900"
-              >
-                {match[1]}
-              </mark>
-            );
-          }
-
-          return <span key={`${part}-${partIndex}`}>{part}</span>;
-        })}
-      </span>
-    );
+    return <span key={index}>{part}</span>;
   });
 }
 
-export default function ProfileCard({ profile }) {
-  const initials = getInitials(profile.full_name);
+function getFirstHighlight(highlight) {
+  if (!highlight) {
+    return null;
+  }
 
-  const highlightedSummary =
-    profile.highlights?.summary?.length > 0
-      ? profile.highlights.summary
-      : null;
+  if (Array.isArray(highlight)) {
+    return highlight[0] || null;
+  }
+
+  return highlight;
+}
+
+function getSkills(profile) {
+  if (Array.isArray(profile.skills)) {
+    return profile.skills.filter(Boolean);
+  }
+
+  if (typeof profile.skills === 'string' && profile.skills.trim()) {
+    return profile.skills
+      .split(',')
+      .map((skill) => skill.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+export default function ProfileCard({ profile }) {
+  const nameHighlight = getFirstHighlight(profile.highlights?.full_name);
+  const jobTitleHighlight = getFirstHighlight(profile.highlights?.job_title);
+  const summaryHighlight = getFirstHighlight(profile.highlights?.summary);
+  const skillsHighlight = profile.highlights?.skills || [];
+
+  const skills = getSkills(profile);
+
+  const displayedName =
+    nameHighlight || profile.full_name || 'Unnamed profile';
+
+  const displayedJobTitle =
+    jobTitleHighlight || profile.job_title || 'Job title not available';
+
+  const displayedSummary =
+    summaryHighlight || profile.summary || 'No summary available.';
+
+  const displayedSkills =
+    skillsHighlight.length > 0
+      ? skillsHighlight
+      : skills.slice(0, 8);
 
   return (
-    <article className="flex h-full flex-col justify-between rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div>
-        <div className="mb-5 flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 font-semibold text-blue-700">
-            {profile.full_name ? initials : <User size={22} />}
-          </div>
-
+    <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-gray-900">
-              {profile.full_name || 'Unknown candidate'}
+              {renderHighlightedText(displayedName)}
             </h2>
 
-            {profile.job_title_role && (
-              <span className="mt-1 inline-block rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                {profile.job_title_role}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-4 space-y-2 text-sm text-gray-600">
-          {profile.job_title && (
-            <div className="flex items-start gap-2">
-              <Briefcase
+            <div className="mt-1 flex items-start gap-2 text-sm text-gray-600">
+              <BriefcaseBusiness
                 size={16}
-                className="mt-0.5 shrink-0 text-gray-400"
-                aria-hidden="true"
-              />
-
-              <span>{profile.job_title}</span>
-            </div>
-          )}
-
-          {(profile.location_city || profile.location_country) && (
-            <div className="flex items-start gap-2">
-              <MapPin
-                size={16}
-                className="mt-0.5 shrink-0 text-gray-400"
+                className="mt-0.5 shrink-0"
                 aria-hidden="true"
               />
 
               <span>
-                {[profile.location_city, profile.location_country]
-                  .filter(Boolean)
-                  .join(', ')}
+                {renderHighlightedText(displayedJobTitle)}
               </span>
             </div>
+          </div>
+
+          {profile.linkedin_url && (
+            <a
+              href={profile.linkedin_url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open ${profile.full_name || 'profile'} on LinkedIn`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+            >
+              LinkedIn
+              <ExternalLink size={15} aria-hidden="true" />
+            </a>
           )}
         </div>
 
-        {(highlightedSummary || profile.summary) && (
-          <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm leading-6 text-gray-600">
-            {highlightedSummary
-              ? renderHighlightedText(
-                  profile.summary,
-                  highlightedSummary,
-                )
-              : profile.summary}
+        {(profile.location_city || profile.location_country) && (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <MapPin size={16} className="shrink-0" aria-hidden="true" />
+
+            <span>
+              {[profile.location_city, profile.location_country]
+                .filter(Boolean)
+                .join(', ')}
+            </span>
           </div>
         )}
 
-        {profile.skills && (
-          <div className="mb-4 flex flex-wrap gap-1.5">
-            {profile.skills
-              .split(',')
-              .map((skill) => skill.trim())
-              .filter(Boolean)
-              .slice(0, 6)
-              .map((skill) => (
-                <span
-                  key={skill}
-                  className="rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-700"
-                >
-                  {skill}
-                </span>
-              ))}
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-800">
+            Summary
+          </h3>
+
+          <p className="line-clamp-4 text-sm leading-6 text-gray-600">
+            {renderHighlightedText(displayedSummary)}
+          </p>
+        </div>
+
+        {displayedSkills.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-gray-800">
+              Skills
+            </h3>
+
+            <div className="flex flex-wrap gap-2">
+              {displayedSkills.map((skill, index) => {
+                const highlightedSkill = getFirstHighlight(skill);
+
+                return (
+                  <span
+                    key={`${skill}-${index}`}
+                    className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700"
+                  >
+                    {renderHighlightedText(
+                      highlightedSkill || skill,
+                    )}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
-
-      {profile.linkedin_url && (
-        <a
-          href={profile.linkedin_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 py-2.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
-        >
-          View LinkedIn Profile
-
-          <ExternalLink
-            size={14}
-            aria-hidden="true"
-          />
-        </a>
-      )}
     </article>
   );
 }
