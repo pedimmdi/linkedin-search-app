@@ -43,6 +43,8 @@ class ProfileSearchServiceTests(TestCase):
         self.assertEqual(profiles, [self.profile])
         self.assertEqual(total, 1)
         self.assertIn("full_name^4", query["fields"])
+        self.assertIn("job_title^3", query["fields"])
+        self.assertIn("skills^2", query["fields"])
         self.assertEqual(query["fuzziness"], "AUTO")
         self.assertEqual(body["from"], 20)
         self.assertEqual(body["query"]["bool"]["filter"], [
@@ -52,6 +54,14 @@ class ProfileSearchServiceTests(TestCase):
         self.assertEqual(
             highlights[str(self.profile.pk)]["full_name"][0],
             "<em>John</em> Doe",
+        )
+        self.assertEqual(
+            body["highlight"]["pre_tags"],
+            ["<mark>"],
+        )
+        self.assertEqual(
+            body["highlight"]["post_tags"],
+            ["</mark>"],
         )
 
     def test_empty_query_uses_match_all(self):
@@ -105,3 +115,45 @@ class ProfileSearchServiceTests(TestCase):
             [{"match_all": {}}],
         )
         self.assertEqual(body["size"], 0)
+
+    def test_build_query_with_filters(self):
+        client = self._client()
+
+        service = ProfileSearchService(client)
+
+        query = service._build_query(
+            query="engineer",
+            role="engineering",
+            country="United States",
+        )
+
+        self.assertEqual(
+            query["bool"]["filter"],
+            [
+                {"term": {"job_title_role": "engineering"}},
+                {"term": {"location_country": "United States"}},
+            ],
+        )
+
+        multi_match = query["bool"]["must"][0]["multi_match"]
+
+        self.assertEqual(multi_match["query"], "engineer")
+        self.assertEqual(multi_match["fuzziness"], "AUTO")
+        self.assertEqual(multi_match["operator"], "and")
+
+    def test_build_query_without_search_term(self):
+        client = self._client()
+
+        service = ProfileSearchService(client)
+
+        query = service._build_query()
+
+        self.assertEqual(
+            query,
+            {
+                "bool": {
+                    "must": [{"match_all": {}}],
+                    "filter": [],
+                }
+            },
+        )
