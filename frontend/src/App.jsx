@@ -237,7 +237,7 @@ export default function App() {
         </section>
 
         <section aria-live="polite">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-gray-600">
               Found{' '}
               <span className="font-bold text-blue-600">
@@ -246,11 +246,19 @@ export default function App() {
               candidates
             </p>
 
-            {loading && (
-              <span className="text-xs font-medium text-gray-400">
-                Searching...
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {totalPages > 1 && (
+                <span className="text-xs font-medium text-gray-400">
+                  Page {currentPage} of {totalPages}
+                </span>
+              )}
+
+              {loading && (
+                <span className="text-xs font-medium text-gray-400">
+                  Searching...
+                </span>
+              )}
+            </div>
           </div>
 
           {error && (
