@@ -28,28 +28,40 @@ function renderHighlightedText(text, highlights) {
     return text;
   }
 
-  return (
-    <>
-      {highlights.map((item, index) => (
-        <span key={`${item}-${index}`}>
-          {index > 0 && ' ... '}
-          <span
-            dangerouslySetInnerHTML={{
-              __html: item,
-            }}
-          />
-        </span>
-      ))}
-    </>
-  );
+  return highlights.map((item, index) => {
+    const parts = item.split(/(<mark>.*?<\/mark>)/gi);
+
+    return (
+      <span key={`${item}-${index}`}>
+        {index > 0 && ' ... '}
+
+        {parts.map((part, partIndex) => {
+          const match = part.match(/^<mark>(.*?)<\/mark>$/i);
+
+          if (match) {
+            return (
+              <mark
+                key={`${part}-${partIndex}`}
+                className="rounded bg-yellow-100 px-0.5 text-gray-900"
+              >
+                {match[1]}
+              </mark>
+            );
+          }
+
+          return <span key={`${part}-${partIndex}`}>{part}</span>;
+        })}
+      </span>
+    );
+  });
 }
 
 export default function ProfileCard({ profile }) {
   const initials = getInitials(profile.full_name);
 
   const highlightedSummary =
-    profile.highlight?.summary?.length > 0
-      ? profile.highlight.summary
+    profile.highlights?.summary?.length > 0
+      ? profile.highlights.summary
       : null;
 
   return (

@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 
-import { AlertCircle, LoaderCircle } from 'lucide-react';
+import {
+  AlertCircle,
+  Search,
+  SearchX,
+} from 'lucide-react';
 
 import { fetchProfileFilters, searchProfiles } from './api/profiles';
 import Filters from './components/Filters';
 import Pagination from './components/Pagination';
 import ProfileCard from './components/ProfileCard';
 import SearchBar from './components/SearchBar';
+
+const PAGE_SIZE = 20;
 
 export default function App() {
   const [profiles, setProfiles] = useState([]);
@@ -22,6 +28,7 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [filtersLoading, setFiltersLoading] = useState(true);
+  const [filtersError, setFiltersError] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -30,6 +37,7 @@ export default function App() {
     const loadFilters = async () => {
       try {
         setFiltersLoading(true);
+        setFiltersError('');
 
         const data = await fetchProfileFilters({
           signal: controller.signal,
@@ -38,9 +46,19 @@ export default function App() {
         setRoles(data.roles || []);
         setCountries(data.countries || []);
       } catch (requestError) {
-        if (requestError.name !== 'CanceledError') {
-          console.error('Failed to load filters:', requestError);
+        if (
+          requestError.name === 'CanceledError' ||
+          requestError.code === 'ERR_CANCELED' ||
+          requestError.name === 'AbortError'
+        ) {
+          return;
         }
+
+        console.error('Failed to load filters:', requestError);
+
+        setFiltersError(
+          'Filter options could not be loaded. You can still search profiles.',
+        );
       } finally {
         if (!controller.signal.aborted) {
           setFiltersLoading(false);
@@ -74,7 +92,8 @@ export default function App() {
       } catch (requestError) {
         if (
           requestError.name === 'CanceledError' ||
-          requestError.code === 'ERR_CANCELED'
+          requestError.code === 'ERR_CANCELED' ||
+          requestError.name === 'AbortError'
         ) {
           return;
         }
@@ -84,6 +103,10 @@ export default function App() {
         if (requestError.response?.status === 503) {
           setError(
             'Search service is temporarily unavailable. Please try again in a moment.',
+          );
+        } else if (requestError.response?.status === 400) {
+          setError(
+            'The requested page is no longer available. Please try the search again.',
           );
         } else {
           setError(
@@ -132,16 +155,27 @@ export default function App() {
     setCurrentPage(1);
   };
 
-  const totalPages = Math.ceil(totalCount / 20);
-
   const handlePageChange = (page) => {
     setCurrentPage(page);
+
     window.scrollTo({
       top: 0,
       behavior: 'smooth',
     });
   };
-  
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const hasActiveFilters = Boolean(
+    searchQuery || selectedRole || selectedCountry,
+  );
+
+  const clearAllSearchOptions = () => {
+    setSearchQuery('');
+    setSelectedRole('');
+    setSelectedCountry('');
+    setCurrentPage(1);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-10">
@@ -183,9 +217,22 @@ export default function App() {
           </div>
 
           {filtersLoading && (
-            <p className="mt-3 text-xs text-gray-400">
+            <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+              <span className="h-3 w-3 animate-pulse rounded-full bg-gray-300" />
               Loading filter options...
-            </p>
+            </div>
+          )}
+
+          {filtersError && !filtersLoading && (
+            <div className="mt-3 flex items-start gap-2 text-xs text-amber-700">
+              <AlertCircle
+                size={15}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+
+              <span>{filtersError}</span>
+            </div>
           )}
         </section>
 
@@ -198,6 +245,12 @@ export default function App() {
               </span>{' '}
               candidates
             </p>
+
+            {loading && (
+              <span className="text-xs font-medium text-gray-400">
+                Searching...
+              </span>
+            )}
           </div>
 
           {error && (
@@ -209,14 +262,20 @@ export default function App() {
               />
 
               <div>
-                <p className="font-semibold">Unable to load profiles</p>
+                <p className="font-semibold">
+                  Unable to load profiles
+                </p>
+
                 <p className="mt-1">{error}</p>
               </div>
             </div>
           )}
 
           {loading ? (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div
+              className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
+              aria-label="Loading profiles"
+            >
               {Array.from({ length: 6 }).map((_, index) => (
                 <div
                   key={index}
@@ -242,17 +301,34 @@ export default function App() {
           ) : profiles.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
-                <LoaderCircle size={22} />
+                {hasActiveFilters ? (
+                  <SearchX size={22} aria-hidden="true" />
+                ) : (
+                  <Search size={22} aria-hidden="true" />
+                )}
               </div>
 
               <h2 className="text-lg font-semibold text-gray-900">
-                No profiles found
+                {hasActiveFilters
+                  ? 'No profiles found'
+                  : 'Start your search'}
               </h2>
 
               <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
-                Try changing your search query or removing one of the
-                filters.
+                {hasActiveFilters
+                  ? 'Try changing your search query or removing one of the filters.'
+                  : 'Search by candidate name, job title, skills, summary, or location.'}
               </p>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllSearchOptions}
+                  className="mt-5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  Clear search
+                </button>
+              )}
             </div>
           ) : (
             <>

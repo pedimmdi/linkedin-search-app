@@ -548,27 +548,6 @@ class Command(BaseCommand):
 
         return fallback_title, ""
 
-    def _extract_summary(self, values, skills_index):
-        if skills_index is None:
-            return ""
-
-        summary_index = skills_index - 4
-
-        if summary_index < 0:
-            return ""
-
-        summary = str(
-            values[summary_index] or ""
-        ).strip()
-
-        if not summary:
-            return ""
-
-        if self._looks_like_phone_list(summary):
-            return ""
-
-        return summary
-
     @staticmethod
     def _looks_like_phone_list(value):
         parsed = Command._parse_list(value)
