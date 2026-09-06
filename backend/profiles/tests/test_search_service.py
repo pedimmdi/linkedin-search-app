@@ -157,3 +157,87 @@ class ProfileSearchServiceTests(TestCase):
                 }
             },
         )
+
+    def test_build_query_strips_whitespace_from_inputs(self):
+        client = self._client()
+        service = ProfileSearchService(client)
+
+        query = service._build_query(
+            query="  engineer  ",
+            role="  engineering  ",
+            country="  United States  ",
+        )
+
+        multi_match = query["bool"]["must"][0]["multi_match"]
+
+        self.assertEqual(multi_match["query"], "engineer")
+        self.assertEqual(
+            query["bool"]["filter"],
+            [
+                {"term": {"job_title_role": "engineering"}},
+                {"term": {"location_country": "United States"}},
+            ],
+        )
+
+    def test_whitespace_only_query_uses_match_all(self):
+        client = self._client()
+
+        ProfileSearchService(client).search(
+            query="   ",
+            role="   ",
+            country="   ",
+        )
+
+        body = client.search.call_args.kwargs["body"]
+
+        self.assertEqual(
+            body["query"]["bool"]["must"],
+            [{"match_all": {}}],
+        )
+        self.assertEqual(body["query"]["bool"]["filter"], [])
+
+    def test_search_sorts_by_score_then_name(self):
+        client = self._client()
+
+        ProfileSearchService(client).search()
+
+        body = client.search.call_args.kwargs["body"]
+
+        self.assertEqual(
+            body["sort"],
+            [
+                {"_score": "desc"},
+                {"full_name.keyword": "asc"},
+            ],
+        )
+
+    def test_search_ignores_hits_for_missing_profiles(self):
+        client = self._client(
+            hits=[
+                {
+                    "_source": {"django_id": 999999},
+                    "highlight": {
+                        "full_name": ["<mark>Ghost</mark> Profile"],
+                    },
+                }
+            ],
+            total=1,
+        )
+
+        profiles, total, highlights = ProfileSearchService(client).search()
+
+        self.assertEqual(profiles, [])
+        self.assertEqual(total, 1)
+        self.assertEqual(
+            highlights["999999"]["full_name"][0],
+            "<mark>Ghost</mark> Profile",
+        )
+
+    def test_get_total_supports_integer_total(self):
+        client = self._client()
+        service = ProfileSearchService(client)
+
+        self.assertEqual(
+            service._get_total({"hits": {"total": 7}}),
+            7,
+        )
