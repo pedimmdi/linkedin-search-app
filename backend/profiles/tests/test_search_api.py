@@ -148,7 +148,7 @@ class ProfileSearchAPITests(APITestCase):
         self.assertEqual(response.data["previous"], 1)
 
     def test_out_of_range_page_returns_400(self):
-        with self._mock_count(20):
+        with self._mock_search([], 20):
             response = self.client.get(
                 reverse("profile-search"),
                 {"page": 2},
@@ -163,20 +163,19 @@ class ProfileSearchAPITests(APITestCase):
         self.assertEqual(response.data["results"], [])
         self.assertEqual(response.data["previous"], 1)
 
-    def test_out_of_range_page_does_not_execute_search(self):
-        with (
-            self._mock_count(20),
-            patch(
-                "profiles.views.ProfileSearchService.search"
-            ) as search_mock,
-        ):
+    def test_search_returns_total_for_out_of_range_page(self):
+        with self._mock_search([], 20) as search_mock:
             response = self.client.get(
                 reverse("profile-search"),
                 {"page": 2},
             )
 
         self.assertEqual(response.status_code, 400)
-        search_mock.assert_not_called()
+        self.assertEqual(
+            response.data["detail"],
+            "Requested page is out of range.",
+        )
+        search_mock.assert_called_once()
 
     def test_search_returns_highlights(self):
         highlights = {
@@ -199,22 +198,6 @@ class ProfileSearchAPITests(APITestCase):
         self.assertEqual(
             response.data["results"][0]["highlights"]["full_name"][0],
             "<em>John</em> Doe",
-        )
-
-    def test_count_error_returns_503(self):
-        with patch(
-            "profiles.views.ProfileSearchService.count",
-            side_effect=RuntimeError("Elasticsearch unavailable"),
-        ):
-            response = self.client.get(
-                reverse("profile-search"),
-                {"q": "John"},
-            )
-
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(
-            response.data["detail"],
-            "Search service is temporarily unavailable.",
         )
 
     def test_search_error_returns_503(self):

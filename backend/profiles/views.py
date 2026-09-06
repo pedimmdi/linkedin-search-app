@@ -22,21 +22,36 @@ class ProfileSearchAPIView(ListAPIView):
         query = request.query_params.get("q", "")
         role = request.query_params.get("role", "")
         country = request.query_params.get("country", "")
+
         try:
             page = max(int(request.query_params.get("page", 1)), 1)
         except (TypeError, ValueError):
             page = 1
 
         page_size = settings.REST_FRAMEWORK.get("PAGE_SIZE", 20)
+        search_from = (page - 1) * page_size
 
-        # Elasticsearch has a finite result window. Return a client error
-        # instead of exposing an internal search-service failure when the
-        # requested page is outside the available result range.
+        if search_from >= 10_000:
+            return Response(
+                {
+                    "detail": "Requested page is out of range.",
+                    "count": 0,
+                    "next": None,
+                    "previous": page - 1 if page > 1 else None,
+                    "results": [],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        search_service = ProfileSearchService()
+
         try:
-            total = ProfileSearchService().count(
+            profiles, total, highlights = search_service.search(
                 query=query,
                 role=role,
                 country=country,
+                page=page,
+                page_size=page_size,
             )
         except Exception:
             return Response(
@@ -56,31 +71,19 @@ class ProfileSearchAPIView(ListAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            profiles, _, highlights = ProfileSearchService().search(
-                query=query,
-                role=role,
-                country=country,
-                page=page,
-                page_size=page_size,
-            )
-        except Exception:
-            return Response(
-                {"detail": "Search service is temporarily unavailable."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
         data = self.get_serializer(profiles, many=True).data
+
         for item in data:
             item["highlights"] = highlights.get(str(item["id"]), {})
 
-        return Response({
-            "count": total,
-            "next": page + 1 if page * page_size < total else None,
-            "previous": page - 1 if page > 1 else None,
-            "results": data,
-        })
-
+        return Response(
+            {
+                "count": total,
+                "next": page + 1 if page * page_size < total else None,
+                "previous": page - 1 if page > 1 else None,
+                "results": data,
+            }
+        )
 
 class ProfileFiltersAPIView(APIView):
     def get(self, request, *args, **kwargs):
