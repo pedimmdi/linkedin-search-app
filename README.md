@@ -325,10 +325,11 @@ linkedin-search-app/
 ├── backend/
 │   ├── config/                  # Django project configuration
 │   ├── profiles/                # Profile model, API, search service, commands, tests
-│   │   ├── management/commands/
-│   │   │   ├── import_csv.py
-│   │   │   └── reindex_profiles.py
-│   │   │   ├── services/
+│   │   ├── management/
+│   │   │   └── commands/
+│   │   │       ├── import_csv.py
+│   │   │       └── reindex_profiles.py
+│   │   ├── services/
 │   │   │   └── search.py
 │   │   └── search_index.py
 │   ├── Dockerfile
